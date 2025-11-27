@@ -280,6 +280,13 @@ document.addEventListener("DOMContentLoaded", () => {
             conflictNodeDegrees.set(e.targetId, (conflictNodeDegrees.get(e.targetId) || 0) + 1);
         });
 
+        // Pre-calculate principal conflict nodes (degree > 2 in conflict subgraph) for connector mapping
+        const principalConflictNodes = nodes.filter(n => {
+            if (!conflictNodeIds.has(n.id)) return false;
+            const degree = conflictNodeDegrees.get(n.id);
+            return degree > 2;
+        });
+
         const simulation = d3.forceSimulation(nodes)
             .force("link", d3.forceLink(edges).id(d => d.id).distance(100))
             .force("charge", d3.forceManyBody().strength(-300))
@@ -392,8 +399,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
                     // Update connector lines when physics is stopped
                     const connectors = [];
-                    const conflictNodesArr = nodes.filter(n => conflictNodeIds.has(n.id));
-                    conflictNodesArr.forEach((n, i) => {
+                    // Only map principal nodes to canonical nodes
+                    principalConflictNodes.forEach((n, i) => {
                         const target = canonicalData.nodes[i % canonicalData.nodes.length];
                         connectors.push({ source: n, target: target });
                     });
@@ -453,8 +460,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     // Function to update connectors during animation
                     const updateConnectorsDuringFlight = () => {
                         const connectors = [];
-                        const conflictNodesArr = nodes.filter(n => conflictNodeIds.has(n.id));
-                        conflictNodesArr.forEach((n, i) => {
+                        // Only map principal nodes to canonical nodes
+                        principalConflictNodes.forEach((n, i) => {
                             const target = canonicalData.nodes[i % canonicalData.nodes.length];
                             connectors.push({ source: n, target: target });
                         });
@@ -741,8 +748,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
             // Connector lines (always the same, regardless of animation state)
             const connectors = [];
-            const conflictNodesArr = nodes.filter(n => conflictNodeIds.has(n.id));
-            conflictNodesArr.forEach((n, i) => {
+            // Only map principal nodes to canonical nodes
+            principalConflictNodes.forEach((n, i) => {
                 const target = canonicalData.nodes[i % canonicalData.nodes.length];
                 connectors.push({ source: n, target: target });
             });
