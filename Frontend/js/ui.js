@@ -16,6 +16,8 @@ export const UI = {
     conflictType: document.getElementById("conflict-type"),
     playAnimationBtn: document.getElementById("play-animation"),
     resetGraphBtn: document.getElementById("reset-graph"),
+    enablePhysicsPlanarBtn: document.getElementById("enable-physics-planar"),
+    resetPlanarBtn: document.getElementById("reset-planar"),
     animationControls: document.getElementById("animation-controls"),
     originalGraph: document.getElementById("original-graph"),
     resultGraph: document.getElementById("result-graph"),
@@ -94,6 +96,11 @@ export function resetGraphUI() {
     UI.resultGraph.innerHTML = "";
     UI.playAnimationBtn.classList.add("hidden");
     UI.resetGraphBtn.classList.add("hidden");
+    if (UI.enablePhysicsPlanarBtn) UI.enablePhysicsPlanarBtn.classList.add("hidden");
+    if (UI.resetPlanarBtn) {
+        UI.resetPlanarBtn.classList.add("hidden");
+        UI.resetPlanarBtn.style.display = "none";
+    }
     UI.animationControls.classList.add("hidden");
     UI.resultPanel.classList.remove("expanded");
 }

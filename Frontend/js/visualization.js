@@ -16,6 +16,7 @@ export function renderGraph(data) {
     // 1. Render Original Input
     renderSingleGraph("#original-graph", data, {
         forceDirected: true,
+        startStopped: true, // Default to no physics effect initially
         highlightConflicts: false,
         staticCoords: false
     });
@@ -27,6 +28,13 @@ export function renderGraph(data) {
             highlightConflicts: false,
             staticCoords: true
         });
+        
+        // Show Enable Physics Button for Planar Graph
+        const enablePhysicsBtn = document.getElementById("enable-physics-planar");
+        if (enablePhysicsBtn) {
+            enablePhysicsBtn.classList.remove("hidden");
+            enablePhysicsBtn.style.display = "flex";
+        }
     } else {
         // Non-Planar: Render with Canonical Subgraph (static mode initially)
         renderCanonicalGraph("#result-graph", data);
@@ -60,7 +68,7 @@ function renderSingleGraph(containerId, data, options) {
 
     const nodes = data.nodes.map(d => ({ ...d }));
     const edges = data.edges.map(d => ({ ...d }));
-    const nodeMap = new Map(nodes.map(n => [n.id, n]));
+    // const nodeMap = new Map(nodes.map(n => [n.id, n])); // Unused in this version
 
     // Draw Edges
     const link = g.append("g")
@@ -84,42 +92,156 @@ function renderSingleGraph(containerId, data, options) {
         .attr("dy", 4)
         .text(d => d.id);
 
+    // --- Simulation Setup ---
+    // We always create the simulation so we can toggle it later.
+    const simulation = d3.forceSimulation(nodes)
+        .force("link", d3.forceLink(edges).id(d => d.id).distance(100))
+        .force("charge", d3.forceManyBody().strength(-300))
+        .force("center", d3.forceCenter(width / 2, height / 2));
+
+    simulation.on("tick", ticked);
+
+    // --- Initial Layout Logic ---
     if (options.staticCoords && nodes[0].x !== undefined) {
-        // Static Layout (Planar)
-        const xExtent = d3.extent(nodes, d => d.x);
-        const yExtent = d3.extent(nodes, d => d.y);
-        const xCenter = (xExtent[0] + xExtent[1]) / 2;
-        const yCenter = (yExtent[0] + yExtent[1]) / 2;
-        const xOffset = width / 2 - xCenter;
-        const yOffset = height / 2 - yCenter;
+        // Stop simulation immediately to prevent force layout from running
+        simulation.stop();
+        
+        // Use static coordinates from data
+        // Note: nodes passed to forceSimulation are the same objects
+        // But forceSimulation might have overwritten x,y with initial randoms if we didn't be careful?
+        // Actually, d3.forceSimulation(nodes) uses existing x,y if present.
+        // So we just need to ensure we don't let it tick.
+        
+        // Update DOM positions immediately
+        ticked();
+        
+        // Zoom to fit after static layout is ready
+        zoomToFit();
+        
+    } else if (options.startStopped) {
+        // For Original Input (forceDirected but startStopped)
+        // We let the simulation initialize (calculate starting positions) but stop it.
+        // Or actually, usually we want to let it run for a bit to stabilize?
+        // But "Original Input" implies "as provided".
+        // If the input file has coordinates, D3 uses them.
+        // If not, D3 assigns random or force-based initial positions.
+        // If we want "Original Input", we probably want to respect input coordinates if any.
+        // If no coordinates, D3 force layout starts from random.
+        // If we stop immediately, it will look like a jumble if random.
+        // But the user said "make original input default to no physics".
+        // If the user uploads a file with positions (like JSON), we show that.
+        // If GML/Matrix without positions, D3 initializes them.
+        
+        simulation.stop();
+        
+        // If the nodes didn't have coordinates, D3 initialized them.
+        // Let's render them.
+        ticked();
+        
+        zoomToFit();
+    } else {
+        // Normal running simulation
+        // Wait for a few ticks or let it run?
+        // Usually we let it run.
+        // But for "zoom to fit", it's hard with moving target.
+        // We can set an initial zoom based on initial positions?
+        // Or just center it.
+        // D3 forceCenter keeps it centered.
+        // We can do a one-time zoomToFit after a short delay?
+        // Or just let user zoom.
+        // But request said "Auto zoom to fit".
+        
+        // Let's do a zoomToFit on start.
+        // But force layout expands.
+        // Maybe we don't zoomToFit for running simulation continuously, just once.
+        zoomToFit();
+    }
 
-        // Initial Transform to center
-        const initialTransform = d3.zoomIdentity.translate(xOffset, yOffset);
-        svg.call(zoom.transform, initialTransform);
-
+    function ticked() {
         link
-            .attr("x1", d => nodeMap.get(d.source).x)
-            .attr("y1", d => nodeMap.get(d.source).y)
-            .attr("x2", d => nodeMap.get(d.target).x)
-            .attr("y2", d => nodeMap.get(d.target).y);
+            .attr("x1", d => d.source.x)
+            .attr("y1", d => d.source.y)
+            .attr("x2", d => d.target.x)
+            .attr("y2", d => d.target.y);
 
         node.attr("transform", d => `translate(${d.x},${d.y})`);
-    } else {
-        // Force Directed Layout
-        const simulation = d3.forceSimulation(nodes)
-            .force("link", d3.forceLink(edges).id(d => d.id).distance(100))
-            .force("charge", d3.forceManyBody().strength(-300))
-            .force("center", d3.forceCenter(width / 2, height / 2));
+    }
 
-        simulation.on("tick", () => {
-            link
-                .attr("x1", d => d.source.x)
-                .attr("y1", d => d.source.y)
-                .attr("x2", d => d.target.x)
-                .attr("y2", d => d.target.y);
+    function zoomToFit() {
+        // Calculate bounding box of nodes
+        if (nodes.length === 0) return;
 
-            node.attr("transform", d => `translate(${d.x},${d.y})`);
-        });
+        const xExtent = d3.extent(nodes, d => d.x);
+        const yExtent = d3.extent(nodes, d => d.y);
+        
+        if (xExtent[0] === undefined || yExtent[0] === undefined) return;
+
+        const padding = 40;
+        const boundsWidth = xExtent[1] - xExtent[0];
+        const boundsHeight = yExtent[1] - yExtent[0];
+        
+        const midX = (xExtent[0] + xExtent[1]) / 2;
+        const midY = (yExtent[0] + yExtent[1]) / 2;
+        
+        // If bounds are tiny (single point), default to scale 1
+        if (boundsWidth === 0 || boundsHeight === 0) {
+             svg.call(zoom.transform, d3.zoomIdentity.translate(width/2 - midX, height/2 - midY));
+             return;
+        }
+
+        const scaleX = (width - padding * 2) / boundsWidth;
+        const scaleY = (height - padding * 2) / boundsHeight;
+        const scale = Math.min(scaleX, scaleY, 2); // Cap max scale at 2
+
+        // Calculate translation to center the graph
+        // d3.zoomIdentity.translate(tx, ty).scale(k)
+        // The transform is: newX = k * x + tx
+        // We want: center = k * mid + tx
+        // tx = center - k * mid
+        
+        const tx = width / 2 - scale * midX;
+        const ty = height / 2 - scale * midY;
+
+        svg.transition().duration(750).call(zoom.transform, d3.zoomIdentity
+            .translate(tx, ty)
+            .scale(scale));
+    }
+
+    // Handle Planar Graph Physics Toggle
+    if (containerId === "#result-graph" && options.staticCoords) {
+         const enablePhysicsBtn = document.getElementById("enable-physics-planar");
+         const resetPlanarBtn = document.getElementById("reset-planar");
+         
+         if (enablePhysicsBtn && resetPlanarBtn) {
+             // Clean up old event listeners (not strictly necessary as we replace elements or listeners, but good practice if elements persist)
+             // Since we re-render the graph, the button elements are outside the graph container, so they persist.
+             // We need to be careful not to stack listeners?
+             // Actually, `onclick` property assignment overwrites previous handler. safely.
+             
+             enablePhysicsBtn.onclick = () => {
+                 enablePhysicsBtn.classList.add("hidden");
+                 enablePhysicsBtn.style.display = "none";
+                 resetPlanarBtn.classList.remove("hidden");
+                 resetPlanarBtn.style.display = "flex";
+                 
+                 simulation.alpha(1).restart();
+             };
+             
+             resetPlanarBtn.onclick = () => {
+                 resetPlanarBtn.classList.add("hidden");
+                 resetPlanarBtn.style.display = "none";
+                 enablePhysicsBtn.classList.remove("hidden");
+                 enablePhysicsBtn.style.display = "flex";
+                 
+                 simulation.stop();
+                 
+                 // Clear current graph container before re-rendering
+                 d3.select(containerId).selectAll("*").remove();
+                 
+                 // Re-render to reset positions
+                 renderSingleGraph(containerId, data, options);
+             };
+         }
     }
 
     // Bind Control Buttons
@@ -132,18 +254,7 @@ function renderSingleGraph(containerId, data, options) {
     });
 
     controls.select(".reset-view").on("click", () => {
-        if (options.staticCoords) {
-            // Re-center static layout
-            const xExtent = d3.extent(nodes, d => d.x);
-            const yExtent = d3.extent(nodes, d => d.y);
-            const xCenter = (xExtent[0] + xExtent[1]) / 2;
-            const yCenter = (yExtent[0] + yExtent[1]) / 2;
-            const xOffset = width / 2 - xCenter;
-            const yOffset = height / 2 - yCenter;
-            svg.transition().duration(750).call(zoom.transform, d3.zoomIdentity.translate(xOffset, yOffset));
-        } else {
-            svg.transition().duration(750).call(zoom.transform, d3.zoomIdentity);
-        }
+        zoomToFit();
     });
 }
 
@@ -193,6 +304,12 @@ function renderCanonicalGraph(containerId, data) {
 
     // Pre-calculate principal conflict nodes (degree > 2 in conflict subgraph) for connector mapping
     const principalConflictNodes = nodes.filter(n => {
+        // Use backend flag if available (more robust)
+        if (n.is_principal !== undefined) {
+            return n.is_principal;
+        }
+        
+        // Fallback: Calculate from edges
         if (!conflictNodeIds.has(n.id)) return false;
         const degree = conflictNodeDegrees.get(n.id);
         return degree > 2;
@@ -537,8 +654,7 @@ function renderCanonicalGraph(containerId, data) {
 
         // Redraw animation edges (fly from original to canonical position)
         const edgesToShow = conflictEdgesOriginal.slice(0, currentStep);
-        const edgesToRemove = conflictEdgesOriginal.slice(currentStep);
-
+        
         // Handle entering edges (fly in)
         animEdgesGroup.selectAll(".edge.canonical")
             .data(edgesToShow, (d, i) => i)
