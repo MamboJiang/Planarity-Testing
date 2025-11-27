@@ -1,0 +1,8 @@
+*Vertices 3
+1 "Node A"
+2 "Node B"
+3 "Node C"
+*Edges
+1 2
+2 3
+3 1
