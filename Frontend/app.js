@@ -94,28 +94,51 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function renderGraph(data) {
-        // Clear previous graph
-        graphContainer.innerHTML = "";
+        // Clear previous graphs
+        document.getElementById("original-graph").innerHTML = "";
+        document.getElementById("result-graph").innerHTML = "";
 
-        const width = graphContainer.clientWidth;
-        const height = graphContainer.clientHeight;
+        // 1. Render Original Input (Always Force Directed, No Conflict Highlights)
+        renderSingleGraph("#original-graph", data, {
+            forceDirected: true,
+            highlightConflicts: false,
+            staticCoords: false
+        });
 
-        const svg = d3.select("#graph-container")
+        // 2. Render Result
+        if (data.status === "planar") {
+            // Planar: Use static coordinates, no conflicts
+            renderSingleGraph("#result-graph", data, {
+                forceDirected: false,
+                highlightConflicts: false,
+                staticCoords: true
+            });
+        } else {
+            // Non-Planar: Force Directed, WITH Conflict Highlights
+            renderSingleGraph("#result-graph", data, {
+                forceDirected: true,
+                highlightConflicts: true,
+                staticCoords: false
+            });
+        }
+    }
+
+    function renderSingleGraph(containerId, data, options) {
+        const container = document.querySelector(containerId);
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+
+        const svg = d3.select(containerId)
             .append("svg")
-            .attr("id", "graph-svg")
             .attr("width", "100%")
             .attr("height", "100%")
-            .call(zoom)
+            .call(d3.zoom().scaleExtent([0.1, 10]).on("zoom", (event) => {
+                svg.select("g").attr("transform", event.transform);
+            }))
             .append("g");
-
-        // If planar, we use fixed coordinates. If non-planar, we might use force simulation
-        // For this MVP, we assume the backend sends coordinates for planar, 
-        // and we might need a force simulation for non-planar if coordinates aren't provided.
 
         const nodes = data.nodes.map(d => ({ ...d }));
         const edges = data.edges.map(d => ({ ...d }));
-
-        // Create a map for quick node lookup
         const nodeMap = new Map(nodes.map(n => [n.id, n]));
 
         // Draw Edges
@@ -123,14 +146,14 @@ document.addEventListener("DOMContentLoaded", () => {
             .selectAll("line")
             .data(edges)
             .join("line")
-            .attr("class", d => d.is_conflict ? "edge conflict" : "edge");
+            .attr("class", d => (options.highlightConflicts && d.is_conflict) ? "edge conflict" : "edge");
 
         // Draw Nodes
         const node = svg.append("g")
             .selectAll(".node")
             .data(nodes)
             .join("g")
-            .attr("class", d => d.is_conflict ? "node conflict" : "node");
+            .attr("class", "node");
 
         node.append("circle")
             .attr("r", 6);
@@ -140,18 +163,12 @@ document.addEventListener("DOMContentLoaded", () => {
             .attr("dy", 4)
             .text(d => d.id);
 
-        // Positioning logic
-        if (data.status === "planar" && nodes[0].x !== undefined) {
-            // Use provided coordinates (scaled to fit if needed, but for now raw)
-            // We might need to center the graph
-
-            // Calculate bounds to center
+        if (options.staticCoords && nodes[0].x !== undefined) {
+            // Static Layout (Planar)
             const xExtent = d3.extent(nodes, d => d.x);
             const yExtent = d3.extent(nodes, d => d.y);
             const xCenter = (xExtent[0] + xExtent[1]) / 2;
             const yCenter = (yExtent[0] + yExtent[1]) / 2;
-
-            // Offset to center of screen
             const xOffset = width / 2 - xCenter;
             const yOffset = height / 2 - yCenter;
 
@@ -162,9 +179,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 .attr("y2", d => nodeMap.get(d.target).y + yOffset);
 
             node.attr("transform", d => `translate(${d.x + xOffset},${d.y + yOffset})`);
-
         } else {
-            // Force Directed Layout for non-planar or missing coords
+            // Force Directed Layout
             const simulation = d3.forceSimulation(nodes)
                 .force("link", d3.forceLink(edges).id(d => d.id).distance(100))
                 .force("charge", d3.forceManyBody().strength(-300))
@@ -180,19 +196,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 node.attr("transform", d => `translate(${d.x},${d.y})`);
             });
         }
-
-        // Zoom controls
-        d3.select("#zoom-in").on("click", () => {
-            d3.select("#graph-svg").transition().call(zoom.scaleBy, 1.2);
-        });
-
-        d3.select("#zoom-out").on("click", () => {
-            d3.select("#graph-svg").transition().call(zoom.scaleBy, 0.8);
-        });
-
-        d3.select("#reset-view").on("click", () => {
-            d3.select("#graph-svg").transition().call(zoom.transform, d3.zoomIdentity);
-        });
     }
 
     // Mock Data Generator for testing without backend
