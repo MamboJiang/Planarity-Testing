@@ -214,8 +214,3 @@ def check_planarity():
 if __name__ == '__main__':
     print("后端服务已启动: http://localhost:5001")
     app.run(debug=True, port=5001)
-<<<<<<< Updated upstream
-=======
-    #1
-    #1
->>>>>>> Stashed changes
