@@ -166,8 +166,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     document.getElementById("conflict-stat").style.display = "flex";
                     document.getElementById("conflict-type").textContent = data.type;
                 }
-                // Show Play Animation button
+                // Show Play Animation button and Reset button
                 document.getElementById("play-animation").classList.remove("hidden");
+                document.getElementById("reset-graph").classList.remove("hidden");
             }, 500);
         }
     }
@@ -179,6 +180,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Reset animation UI
         document.getElementById("play-animation").classList.add("hidden");
+        document.getElementById("reset-graph").classList.add("hidden");
         document.getElementById("animation-controls").classList.add("hidden");
 
         // Reset panel expansion (will re-trigger if non-planar)
@@ -263,21 +265,222 @@ document.addEventListener("DOMContentLoaded", () => {
         node.append("circle").attr("r", 6);
         node.append("text").attr("dx", 10).attr("dy", 4).text(d => d.id);
 
+        // Track snapped nodes
+        const snappedNodes = new Map(); // nodeId -> canonicalNode
+
+        // Function to update physics based on snapped state
+        function updatePhysics() {
+            if (snappedNodes.size > 0) {
+                // Disable physics when any node is snapped
+                simulation.stop();
+            } else {
+                // Re-enable physics when no nodes are snapped
+                simulation.alpha(0.3).restart();
+            }
+        }
+
+        // Function to hide/show canonical nodes based on snapping
+        function updateCanonicalVisibility() {
+            // Create a set of occupied canonical node IDs
+            const occupiedCanonicalIds = new Set();
+            for (const [nodeId, canonNode] of snappedNodes) {
+                occupiedCanonicalIds.add(canonNode.id);
+            }
+
+            // Update all canonical nodes
+            canonicalGroup.selectAll(".node.canonical")
+                .each(function (d) {
+                    const isOccupied = occupiedCanonicalIds.has(d.id);
+                    const nodeGroup = d3.select(this);
+                    nodeGroup
+                        .style("opacity", isOccupied ? 0 : 1)
+                        .style("pointer-events", isOccupied ? "none" : "all");
+
+                    // Also restore circle opacity (in case it was changed during animation)
+                    nodeGroup.select("circle").style("opacity", isOccupied ? 0 : 1);
+                });
+
+            // Hide canonical edges if both endpoints are snapped
+            canonicalGroup.selectAll(".edge.canonical")
+                .each(function (d) {
+                    const sourceOccupied = occupiedCanonicalIds.has(d.source.id);
+                    const targetOccupied = occupiedCanonicalIds.has(d.target.id);
+                    d3.select(this).style("opacity", (sourceOccupied && targetOccupied) ? 0 : 1);
+                });
+        }
+
         // Make nodes draggable
         node.call(d3.drag()
             .on("start", function (event, d) {
-                if (!event.active) simulation.alphaTarget(0.3).restart();
+                // If node is snapped, unsnap it first
+                if (snappedNodes.has(d.id)) {
+                    const canonNode = snappedNodes.get(d.id);
+                    snappedNodes.delete(d.id);
+                    updateCanonicalVisibility();
+                    updatePhysics();
+                }
+
+                // Only restart simulation if no nodes are snapped
+                if (snappedNodes.size === 0) {
+                    if (!event.active) simulation.alphaTarget(0.3).restart();
+                }
                 d.fx = d.x;
                 d.fy = d.y;
             })
             .on("drag", function (event, d) {
                 d.fx = event.x;
                 d.fy = event.y;
+
+                // Manually update node position when physics is stopped
+                if (snappedNodes.size > 0) {
+                    d.x = event.x;
+                    d.y = event.y;
+                    d3.select(this).attr("transform", `translate(${d.x},${d.y})`);
+
+                    // Update edges connected to this node
+                    link.filter(e => e.source === d || e.target === d)
+                        .attr("x1", e => e.source.x)
+                        .attr("y1", e => e.source.y)
+                        .attr("x2", e => e.target.x)
+                        .attr("y2", e => e.target.y);
+
+                    // Update connector lines when physics is stopped
+                    const connectors = [];
+                    const conflictNodesArr = nodes.filter(n => conflictNodeIds.has(n.id));
+                    conflictNodesArr.forEach((n, i) => {
+                        const target = canonicalData.nodes[i % canonicalData.nodes.length];
+                        connectors.push({ source: n, target: target });
+                    });
+
+                    connectorGroup.selectAll(".connector-line")
+                        .data(connectors)
+                        .join("line")
+                        .attr("class", "connector-line")
+                        .attr("x1", d => d.source.x)
+                        .attr("y1", d => d.source.y)
+                        .attr("x2", d => d.target.x)
+                        .attr("y2", d => d.target.y);
+                }
             })
             .on("end", function (event, d) {
-                if (!event.active) simulation.alphaTarget(0);
-                d.fx = null;
-                d.fy = null;
+                // Only stop simulation if no nodes are snapped
+                if (snappedNodes.size === 0) {
+                    if (!event.active) simulation.alphaTarget(0);
+                }
+
+                // Snap to canonical node if close enough
+                const snapDistance = 30; // pixels (reduced from 50)
+                let snapTarget = null;
+
+                // Only snap if we have canonical nodes and this is a conflict node
+                if (conflictNodeIds.has(d.id)) {
+                    let minDistance = snapDistance;
+
+                    for (const canonNode of canonicalData.nodes) {
+                        // Skip if this canonical node is already occupied
+                        let occupied = false;
+                        for (const [nodeId, cn] of snappedNodes) {
+                            if (cn.id === canonNode.id && nodeId !== d.id) {
+                                occupied = true;
+                                break;
+                            }
+                        }
+                        if (occupied) continue;
+
+                        const dx = d.x - canonNode.x;
+                        const dy = d.y - canonNode.y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+
+                        if (distance < minDistance) {
+                            minDistance = distance;
+                            snapTarget = canonNode;
+                        }
+                    }
+                }
+
+                if (snapTarget) {
+                    // Animate the node flying to the canonical position
+                    const nodeSelection = d3.select(this);
+                    const transitionDuration = 300;
+                    const startTime = Date.now();
+
+                    // Function to update connectors during animation
+                    const updateConnectorsDuringFlight = () => {
+                        const connectors = [];
+                        const conflictNodesArr = nodes.filter(n => conflictNodeIds.has(n.id));
+                        conflictNodesArr.forEach((n, i) => {
+                            const target = canonicalData.nodes[i % canonicalData.nodes.length];
+                            connectors.push({ source: n, target: target });
+                        });
+
+                        connectorGroup.selectAll(".connector-line")
+                            .data(connectors)
+                            .join("line")
+                            .attr("class", "connector-line")
+                            .attr("x1", d => d.source.x)
+                            .attr("y1", d => d.source.y)
+                            .attr("x2", d => d.target.x)
+                            .attr("y2", d => d.target.y);
+                    };
+
+                    nodeSelection
+                        .transition()
+                        .duration(transitionDuration)
+                        .ease(d3.easeCubicOut)
+                        .attrTween("transform", function () {
+                            const startX = d.x;
+                            const startY = d.y;
+                            return function (t) {
+                                const x = startX + (snapTarget.x - startX) * t;
+                                const y = startY + (snapTarget.y - startY) * t;
+                                d.x = x;
+                                d.y = y;
+                                d.fx = x;
+                                d.fy = y;
+
+                                // Update edges connected to this node during animation
+                                link.filter(e => e.source === d || e.target === d)
+                                    .attr("x1", e => e.source.x)
+                                    .attr("y1", e => e.source.y)
+                                    .attr("x2", e => e.target.x)
+                                    .attr("y2", e => e.target.y);
+
+                                // Update connector lines during animation
+                                updateConnectorsDuringFlight();
+
+                                return `translate(${x},${y})`;
+                            };
+                        })
+                        .on("end", function () {
+                            // Snap complete
+                            d.fx = snapTarget.x;
+                            d.fy = snapTarget.y;
+                            snappedNodes.set(d.id, snapTarget);
+                            updateCanonicalVisibility();
+                            updatePhysics();
+
+                            // Final connector update
+                            updateConnectorsDuringFlight();
+
+                            // Visual feedback on canonical node
+                            canonicalGroup.selectAll(".node.canonical")
+                                .filter(n => n.id === snapTarget.id)
+                                .select("circle")
+                                .transition()
+                                .duration(200)
+                                .attr("r", 12)
+                                .transition()
+                                .duration(200)
+                                .attr("r", 8)
+                                .transition()
+                                .duration(200)
+                                .style("opacity", 0);
+                        });
+                } else {
+                    // If not snapped, release the node
+                    d.fx = null;
+                    d.fy = null;
+                }
             })
         );
 
@@ -340,6 +543,20 @@ document.addEventListener("DOMContentLoaded", () => {
                         const g = enter.append("g").attr("class", "node");
                         g.append("circle").attr("r", 6);
                         g.append("text").attr("dx", 10).attr("dy", 4).text(d => d.id);
+
+                        // Make animation nodes draggable to prevent SVG zoom interference
+                        g.call(d3.drag()
+                            .on("start", function (event) {
+                                event.sourceEvent.stopPropagation(); // Prevent zoom
+                            })
+                            .on("drag", function (event) {
+                                event.sourceEvent.stopPropagation(); // Prevent zoom
+                            })
+                            .on("end", function (event) {
+                                event.sourceEvent.stopPropagation(); // Prevent zoom
+                            })
+                        );
+
                         return g;
                     }
                 )
@@ -498,6 +715,25 @@ document.addEventListener("DOMContentLoaded", () => {
         controls.select(".zoom-in").on("click", () => svg.transition().call(zoom.scaleBy, 1.2));
         controls.select(".zoom-out").on("click", () => svg.transition().call(zoom.scaleBy, 0.8));
         controls.select(".reset-view").on("click", () => svg.transition().call(zoom.transform, d3.zoomIdentity));
+
+        // Reset Graph Button - restore to initial state
+        d3.select("#reset-graph").on("click", () => {
+            // Clear all snapped nodes
+            snappedNodes.clear();
+
+            // Remove all fixed positions
+            nodes.forEach(n => {
+                n.fx = null;
+                n.fy = null;
+            });
+
+            // Restore canonical visibility
+            updateCanonicalVisibility();
+
+            // Restart physics
+            simulation.alpha(0.3).restart();
+            updatePhysics();
+        });
     }
 
     function generateCanonicalData(type, centerX, centerY) {
