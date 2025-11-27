@@ -43,29 +43,62 @@ def check_planarity():
         # file.read() 读出来是字节，decode 把它变成字符串
         content = file.read().decode('utf-8')
 
-        # B. 解析图数据 (这是你的核心工作之一)
+        # B. 解析图数据
         G = parse_graph_from_text(content)
 
         # 简单的验证：如果图是空的
         if G.number_of_nodes() == 0:
             return jsonify({"error": "解析失败，图是空的"}), 400
 
-        # ==========================================
-        # C. 这里就是你把球传给 成员 B 的地方！
-        # ==========================================
-        # 暂时我们先写个假的返回，等成员 B 写好函数，你就调用他的函数
-        # result = member_b_logic(G)
+        # --- 核心逻辑 (Member B Work) ---
+        is_planar, certificate = nx.check_planarity(G)
 
-        # --- 假装 B 已经处理完了 ---
-        response_data = {
-            "message": "文件接收成功！",
-            "node_count": G.number_of_nodes(),
-            "edge_count": G.number_of_edges(),
-            "status": "waiting_for_member_b"
-        }
-        # ==========================================
+        if is_planar:
+            # 如果是平面图，计算坐标
+            # 使用 networkx 的 planar_layout (基于 Chrobak-Payne 或 Tutte)
+            try:
+                pos = nx.planar_layout(certificate)
+            except Exception:
+                # Fallback if planar_layout fails for some reason (e.g. disconnected components)
+                pos = nx.spring_layout(G)
+            
+            # 格式化给前端
+            # 放大坐标以便前端显示 (NetworkX 返回 0-1 范围)
+            scale = 500
+            nodes = [{"id": str(n), "x": xy[0] * scale, "y": xy[1] * scale} for n, xy in pos.items()]
+            edges = [{"source": str(u), "target": str(v)} for u, v in G.edges()]
+            
+            return jsonify({
+                "status": "planar",
+                "nodes": nodes,
+                "edges": edges,
+                "message": "Graph is planar!"
+            })
+        else:
+            # 如果是非平面图
+            # certificate 是反例 (Kuratowski subgraph)
+            # 标记冲突边
+            conflict_edges = set()
+            if certificate:
+                for u, v in certificate.edges():
+                    conflict_edges.add(frozenset([str(u), str(v)]))
+            
+            nodes = [{"id": str(n)} for n in G.nodes()]
+            edges = []
+            for u, v in G.edges():
+                is_conflict = frozenset([str(u), str(v)]) in conflict_edges
+                edges.append({
+                    "source": str(u), 
+                    "target": str(v), 
+                    "is_conflict": is_conflict
+                })
 
-        return jsonify(response_data)
+            return jsonify({
+                "status": "non_planar",
+                "nodes": nodes,
+                "edges": edges,
+                "message": "Graph is not planar."
+            })
 
     except Exception as e:
         print(f"Error: {e}")
