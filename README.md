@@ -6,6 +6,13 @@ A powerful web-based application for testing graph planarity with advanced visua
 ![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
 ![JavaScript](https://img.shields.io/badge/javascript-ES6+-yellow.svg)
 
+## 📸 Screenshots
+
+| | |
+|:--:|:--:|
+| <img src="readme_example/UI.png" alt="UI Overview" width="45%"/> | <img src="readme_example/Editor.png" alt="Graph Editor" width="45%"/> |
+| <img src="readme_example/Planar.png" alt="Planar Graph Result" width="45%"/> | <img src="readme_example/Non-Planar.png" alt="Non-Planar Graph Result" width="45%"/> |
+
 ## ✨ Features
 
 ### 🎨 Interactive Graph Editor
@@ -155,12 +162,6 @@ When viewing a non-planar graph:
 3. Watch edges fly from your graph to the canonical form
 4. Click **"Cancel Animation"** to return to static view
 
-## 📸 Screenshots
-
-| | |
-|:--:|:--:|
-| <img src="readme_example/UI.png" alt="UI Overview" width="45%"/> | <img src="readme_example/Editor.png" alt="Graph Editor" width="45%"/> |
-| <img src="readme_example/Planar.png" alt="Planar Graph Result" width="45%"/> | <img src="readme_example/Non-Planar.png" alt="Non-Planar Graph Result" width="45%"/> |
 
 ## 🏗️ Architecture
 
