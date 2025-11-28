@@ -15,7 +15,7 @@ Graph planarity is a fundamental concept in graph theory with applications in ci
 ### Key Highlights
 *   **Dual-Algorithm Engine**:
     *   ⚡ **Left-Right Planarity Test (O(n))**: Industry-standard algorithm (via NetworkX) for instant results.
-    *   � **Kuratowski Search**: A custom implementation that finds specific $K_5$ or $K_{3,3}$ subdivisions to "prove" non-planarity.
+    *   🛠️ **Kuratowski Search (O(E·N))**: A custom implementation that finds specific $K_5$ or $K_{3,3}$ subdivisions to "prove" non-planarity.
 *   **Interactive Proofs**:
     *   **Planar**: Physics-based force-directed layout that untangles the graph before your eyes.
     *   **Non-Planar**: Smooth animations that isolate the conflict subgraph, snapping it to its canonical form.
@@ -23,7 +23,7 @@ Graph planarity is a fundamental concept in graph theory with applications in ci
 
 ---
 
-## �📸 Screenshots
+## 📸 Screenshots
 
 | | |
 |:--:|:--:|
