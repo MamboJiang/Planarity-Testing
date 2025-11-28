@@ -201,6 +201,7 @@ def check_planarity():
 
         if algorithm == 'Left-Right':
             algo_name = "Left-Right (NetworkX)"
+            print("Using Left-Right")
         # Check Planarity
 
             start_time = time.perf_counter()
@@ -236,6 +237,7 @@ def check_planarity():
 
         elif algorithm == 'kuratowski_search':
             algo_name = "Kuratowski Search (Brute Force)"
+            print("Using kuratowski_search")
 
             start_time = time.perf_counter()
             # 调用暴力搜索函数
